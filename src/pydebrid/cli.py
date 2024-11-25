@@ -17,7 +17,6 @@ API_TOKEN = os.environ.get("RD_KEY")
 if not API_TOKEN:
     raise ValueError("API Token not found")
 
-
 client = Client(api_token=API_TOKEN)
 
 console = Console()
@@ -35,8 +34,16 @@ async def cli_download(save_path: Path, num_downloads: Optional[int] = None):
     else:
         downloads = list(downloads)
 
-    await asyncio.gather(*[client.torrent_unrestrict(t) for t in downloads])
-    await client.batch_download(downloads, str(save_path))
+    results = await asyncio.gather(
+        *[client.torrent_unrestrict(t) for t in downloads], return_exceptions=True
+    )
+    for result in results:
+        if isinstance(result, Exception):
+            console.print(result)
+    successful_downloads = [
+        t for t, r in zip(downloads, results) if not isinstance(r, Exception)
+    ]
+    await client.batch_download(successful_downloads, str(save_path))
     tasks = list()
     for t in downloads:
         if all([u.downloaded for u in t.unrestricted]):
@@ -97,14 +104,15 @@ app = typer.Typer()
 
 @app.command()
 def download(
-    save_path: Path = typer.Argument(..., help="Path to save downloaded files"),
-    n: Optional[int] = typer.Option(None, help="Number of downloads to start"),
+    save_path: Annotated[
+        Path, typer.Argument(..., help="Path to save downloaded files")
+    ],
+    num: Annotated[int, typer.Option(..., "-n", help="Number of downloads to start")],
 ):
     """
     Download files from Real-Debrid
     """
-
-    asyncio.run(cli_download(save_path, n))
+    asyncio.run(cli_download(save_path, num))
 
 
 @app.command("m")
@@ -143,4 +151,4 @@ def hoster(
 
 if __name__ == "__main__":
     p = "/home/kyle/code/pydebrid"
-    app(["download", p, "--n", "1"])
+    app(["download", p, "-n", "2"])

@@ -118,7 +118,6 @@ class Client(httpx.AsyncClient):
                 for link in d.unrestricted
             ]
         )
-
         self.progress.stop_live_display()
 
     async def batch_hoster_download(self, links: list[str], savepath: str):
@@ -127,7 +126,6 @@ class Client(httpx.AsyncClient):
         r = await asyncio.gather(*unrestrict_task)
 
         await asyncio.gather(*[self.download(link, savepath=savepath) for link in r])
-
         self.progress.stop_live_display()
 
     async def batch_tinfo(self, tids: list):
