@@ -151,6 +151,12 @@ class Client(httpx.AsyncClient):
             f"Error: {r.status_code}", request=r.request, response=r
         )
 
+    async def unrestrict_check(self, link: str):
+        r = await self.post("/unrestrict/check", data={"link": link})
+        if r.status_code == 200:
+            return r.json()
+        raise httpx.HTTPStatusError(f"Erorr: {r.status_code}", request=r.request, response=r)
+
 
 class RDManager:
     async def __init__(self, api_token: str, save_path: str, max_downloads=5):
