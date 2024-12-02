@@ -65,6 +65,24 @@ async def cli_magnet(magnet_link: str):
         await client.select_files(rtinfo.id, download_id)
 
 
+async def cli_torrent_upload(torrents: list[Path]):
+    ids = list()
+    for torrent in torrents:
+        r = await client.add_torrent(torrent)
+        ids.append(r['id'])
+    for tid in ids:
+        rtinfo = await client.get_tinfo(tid)
+        if rtinfo:
+            table = Table(show_header=True, header_style="bold magenta")
+            table.add_column("ID", style="dim")
+            table.add_column("File", style="dim")
+            for fdata in rtinfo.files:
+                table.add_row(str(fdata.id), fdata.path)
+            console.print(table)
+            download_id = input("id to download: ")
+            await client.select_files(rtinfo.id, download_id)
+
+
 async def cli_check(n: Optional[int] = None):
     torrents = await client.get_torrent_data()
     if n:
@@ -149,6 +167,10 @@ def hoster(
     asyncio.run(cli_hoster_download(file_data, save_path, n))
 
 
-if __name__ == "__main__":
-    p = "/home/kyle/code/pydebrid"
-    app(["download", p, "-n", "2"])
+@app.command()
+def upload(torrents: list[Path] = typer.Argument(..., help="List of torrent files")):
+    """
+    Upload and select files to download
+    """
+    asyncio.run(cli_torrent_upload(torrents))
+

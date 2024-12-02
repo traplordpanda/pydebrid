@@ -134,6 +134,23 @@ class Client(httpx.AsyncClient):
     async def batch_unrestrict(self, links: list):
         return await asyncio.gather(*[self.unrestrict(link) for link in links])
 
+    async def available_hosts(self):
+        r = await self.get("/torrents/availableHosts")
+        if r.status_code == 200:
+            return r.json()
+        raise httpx.HTTPStatusError(
+            f"Error: {r.status_code}", request=r.request, response=r
+        )
+
+    async def add_torrent(self, torrent_path: Path):
+        data = torrent_path.read_bytes()
+        r = await self.put("/torrents/addTorrent", data=data)
+        if r.status_code == 201:
+            return r.json()
+        raise httpx.HTTPStatusError(
+            f"Error: {r.status_code}", request=r.request, response=r
+        )
+
 
 class RDManager:
     async def __init__(self, api_token: str, save_path: str, max_downloads=5):
