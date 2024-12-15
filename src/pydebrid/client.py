@@ -1,8 +1,8 @@
 import asyncio
 from pathlib import Path
 
-import aiofiles
 import httpx
+import aiofiles
 
 from pydebrid.progress import JobTracker
 from pydebrid.models import MagnetResponse, TorrentInfo, TorrentData, LinkData
@@ -12,12 +12,12 @@ class Client(httpx.AsyncClient):
     progress = JobTracker()
     t_info: list[TorrentInfo] = list()
 
-    def __init__(self, api_token: str, max_downloads=5):
+    def __init__(self, api_token: str):
         super().__init__(
             base_url="https://api.real-debrid.com/rest/1.0",
             headers={"Authorization": f"Bearer {api_token}"},
+            http2=True,
         )
-        self.semaphore = asyncio.Semaphore(max_downloads)
 
     async def get_torrent_data(self) -> list[TorrentData]:
         params = {"limit": 100}
@@ -66,23 +66,44 @@ class Client(httpx.AsyncClient):
         return r
 
     async def download(self, link_data: LinkData, savepath: str) -> None:
+        headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'DNT': '1',
+            'Pragma': 'no-cache',
+            'Referer': 'https://real-debrid.com/',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-site',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        }
         spath = Path(savepath)
         if not spath.exists():
             raise ValueError("Save path does not exist")
-        async with self.semaphore:
-            fname: str = link_data.filename
-            total_size = link_data.filesize
-            spath = Path(spath) / Path(fname)
-            dlink: str = link_data.download
-            chunk_size = 12 * 1024
-            task_id = self.progress.add_task(fname, total_size)
-            async with self.stream("GET", dlink) as r:
-                async with aiofiles.open(spath, "wb") as f:
-                    async for chunk in r.aiter_bytes(chunk_size=chunk_size):
-                        await f.write(chunk)
-                        self.progress.update_task(task_id, chunk_size)
+        fname: str = link_data.filename
+        total_size = link_data.filesize
+        spath = Path(spath) / Path(fname)
+        dlink: str = link_data.download
+        chunk_size = 1024 * 1024
+        task_id = self.progress.add_task(fname, total_size)
+
+        async with self.stream("GET", dlink, headers=headers) as r:
+            if r.status_code != 200:
+                raise ValueError(f"Error: {r.status_code}")
+            async with aiofiles.open(spath, "wb") as f:
+                async for chunk in r.aiter_raw(chunk_size=chunk_size):
+                    await f.write(chunk)
+                    self.progress.update_task(task_id, len(chunk))
         if r.status_code == 200:
             link_data.downloaded = True
+
+    async def download_delete(self, link_data: LinkData, savepath: str) -> None:
+        await self.download(link_data, savepath)
+        await self.delete_torrent(link_data.id)
 
     async def upload_magnet(self, link: str):
         r = await self.post(
@@ -105,7 +126,7 @@ class Client(httpx.AsyncClient):
         return r
 
     async def batch_download(
-        self, data: list[TorrentData | TorrentData], savepath: str
+        self, data: list[TorrentData], savepath: str
     ):
         self.progress.start_live_display()
         unrestrict_task = [self.unrestrict(link) for d in data for link in d.links]
@@ -144,7 +165,7 @@ class Client(httpx.AsyncClient):
 
     async def add_torrent(self, torrent_path: Path):
         data = torrent_path.read_bytes()
-        r = await self.put("/torrents/addTorrent", data=data)
+        r = await self.put("/torrents/addTorrent", content=data)
         if r.status_code == 201:
             return r.json()
         raise httpx.HTTPStatusError(
@@ -155,18 +176,7 @@ class Client(httpx.AsyncClient):
         r = await self.post("/unrestrict/check", data={"link": link})
         if r.status_code == 200:
             return r.json()
-        raise httpx.HTTPStatusError(f"Erorr: {r.status_code}", request=r.request, response=r)
+        raise httpx.HTTPStatusError(
+            f"Error: {r.status_code}", request=r.request, response=r
+        )
 
-
-class RDManager:
-    async def __init__(self, api_token: str, save_path: str, max_downloads=5):
-        self.client = Client(api_token, max_downloads=max_downloads)
-        self.save_path = Path(save_path)
-        self.torrent_data = await self.client.get_torrent_data()
-        self.tids = (i.id for i in self.torrent_data)
-
-    @property
-    def torrents(self):
-        return self.torrent_data
-
-    async def get_tinfo(self, tid: str): ...

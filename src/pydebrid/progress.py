@@ -90,7 +90,9 @@ def torrent_table(t_data: list[TorrentInfo] | list[TorrentData]):
 
     for torrent in t_data:
         table.add_row("Filename", torrent.filename)
-        table.add_row("Bytes", str(torrent.bytes))
+        file_size_gb = torrent.bytes / 1024 / 1024 / 1024
+        file_size = f'{file_size_gb:.2f} GB'
+        table.add_row("Bytes", file_size)
         table.add_row("Progress", str(torrent.progress))
         table.add_row("Status", torrent.status)
         table.add_section()
