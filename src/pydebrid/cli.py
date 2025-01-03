@@ -177,5 +177,3 @@ def upload(torrents: list[Path] = typer.Argument(..., help="List of torrent file
 
 if __name__ == "__main__":
     app(['download', '.', '-n', '2'])
-
-
