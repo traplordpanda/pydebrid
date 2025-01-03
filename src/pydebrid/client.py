@@ -12,7 +12,7 @@ class Client(httpx.AsyncClient):
     progress = JobTracker()
     t_info: list[TorrentInfo] = list()
 
-    def __init__(self, api_token: str, max_connections: int = 10):
+    def __init__(self, api_token: str, max_connections: int = 4):
         super().__init__(
             base_url="https://api.real-debrid.com/rest/1.0",
             headers={"Authorization": f"Bearer {api_token}"},
