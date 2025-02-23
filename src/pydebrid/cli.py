@@ -11,6 +11,7 @@ from rich.table import Table
 
 from pydebrid.client import Client
 from pydebrid.progress import torrent_table, detailed_torrent_table
+from pydebrid.utils import clean_directory_filenames
 
 API_TOKEN = os.environ.get("RD_KEY")
 
@@ -175,7 +176,21 @@ def upload(torrents: list[Path] = typer.Argument(..., help="List of torrent file
     asyncio.run(cli_torrent_upload(torrents))
 
 
+@app.command()
+def clean(
+    fpath: Path = typer.Argument(
+        ..., help="Path to the directory containing files to clean"
+    ),
+    verbose: bool = typer.Option(False, help="Display cleaned filenames"),
+):
+    """
+    Clean filenames in a directory
+    """
+    cleaned_files = clean_directory_filenames(fpath)
+    if verbose:
+        for name in cleaned_files:
+            console.print(name)
+
+
 if __name__ == "__main__":
-    app(['download', '.', '-n', '2'])
-
-
+    app(["download", ".", "-n", "2"])
