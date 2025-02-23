@@ -12,12 +12,13 @@ class Client(httpx.AsyncClient):
     progress = JobTracker()
     t_info: list[TorrentInfo] = list()
 
-    def __init__(self, api_token: str):
+    def __init__(self, api_token: str, max_connections: int = 4):
         super().__init__(
             base_url="https://api.real-debrid.com/rest/1.0",
             headers={"Authorization": f"Bearer {api_token}"},
             http2=True,
         )
+        self.sem = asyncio.Semaphore(max_connections)
 
     async def get_torrent_data(self) -> list[TorrentData]:
         params = {"limit": 100}
@@ -66,40 +67,41 @@ class Client(httpx.AsyncClient):
         return r
 
     async def download(self, link_data: LinkData, savepath: str) -> None:
-        headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'DNT': '1',
-            'Pragma': 'no-cache',
-            'Referer': 'https://real-debrid.com/',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'same-site',
-            'Sec-Fetch-User': '?1',
-            'Upgrade-Insecure-Requests': '1',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        }
-        spath = Path(savepath)
-        if not spath.exists():
-            raise ValueError("Save path does not exist")
-        fname: str = link_data.filename
-        total_size = link_data.filesize
-        spath = Path(spath) / Path(fname)
-        dlink: str = link_data.download
-        chunk_size = 1024 * 1024
-        task_id = self.progress.add_task(fname, total_size)
+        async with self.sem:
+            headers = {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'DNT': '1',
+                'Pragma': 'no-cache',
+                'Referer': 'https://real-debrid.com/',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-site',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            }
+            spath = Path(savepath)
+            if not spath.exists():
+                raise ValueError("Save path does not exist")
+            fname: str = link_data.filename
+            total_size = link_data.filesize
+            spath = Path(spath) / Path(fname)
+            dlink: str = link_data.download
+            chunk_size = 1024 * 1024
+            task_id = self.progress.add_task(fname, total_size)
 
-        async with self.stream("GET", dlink, headers=headers) as r:
-            if r.status_code != 200:
-                raise ValueError(f"Error: {r.status_code}")
-            async with aiofiles.open(spath, "wb") as f:
-                async for chunk in r.aiter_raw(chunk_size=chunk_size):
-                    await f.write(chunk)
-                    self.progress.update_task(task_id, len(chunk))
-        if r.status_code == 200:
-            link_data.downloaded = True
+            async with self.stream("GET", dlink, headers=headers) as r:
+                if r.status_code != 200:
+                    raise ValueError(f"Error: {r.status_code}")
+                async with aiofiles.open(spath, "wb") as f:
+                    async for chunk in r.aiter_raw(chunk_size=chunk_size):
+                        await f.write(chunk)
+                        self.progress.update_task(task_id, len(chunk))
+            if r.status_code == 200:
+                link_data.downloaded = True
 
     async def download_delete(self, link_data: LinkData, savepath: str) -> None:
         await self.download(link_data, savepath)
@@ -125,9 +127,7 @@ class Client(httpx.AsyncClient):
         )
         return r
 
-    async def batch_download(
-        self, data: list[TorrentData], savepath: str
-    ):
+    async def batch_download(self, data: list[TorrentData], savepath: str):
         self.progress.start_live_display()
         unrestrict_task = [self.unrestrict(link) for d in data for link in d.links]
         await asyncio.gather(*unrestrict_task)
@@ -179,4 +179,3 @@ class Client(httpx.AsyncClient):
         raise httpx.HTTPStatusError(
             f"Error: {r.status_code}", request=r.request, response=r
         )
-
