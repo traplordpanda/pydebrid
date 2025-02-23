@@ -33,7 +33,7 @@ def clean_filename(fname: str) -> Match[str] | None:
 
 
 def sanitize_filename(filename: str) -> str:
-    illegal_chars = r'[<>:"/\\|?*\x00-\x1f\!]'
+    illegal_chars = r'[<>:"/\\|?*\x00-\x1f\!\']'
     sanitized = re.sub(illegal_chars, "", filename)
     sanitized = sanitized.strip(". ")
     return sanitized
